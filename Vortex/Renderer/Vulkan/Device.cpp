@@ -531,6 +531,7 @@ Handle::Pipeline VulkanDevice::CreateGraphicsPipeline(const GraphicsPipelineDesc
                        .setPAttachments(&colorBlendAttachement)
                        .setBlendConstants(renderState.BlendState.BlendConstants);
 
+
   auto pipelineInfo = vk::GraphicsPipelineCreateInfo()
                           .setStageCount((uint32_t)shaderStages.size())
                           .setPStages(shaderStages.data())
@@ -543,11 +544,21 @@ Handle::Pipeline VulkanDevice::CreateGraphicsPipeline(const GraphicsPipelineDesc
                           .setRenderPass(reinterpret_cast<VkRenderPass>(renderState.RenderPass))
                           .setPViewportState(&viewPortState);
 
-  GraphicsPipelineCache pipeline = {
-      renderState,
-      graphics,
-      {mDevice->createGraphicsPipelineUnique(*mPipelineCache, pipelineInfo)}};
-  mGraphicsPipelines.push_back(std::move(pipeline));
+  // --- CORRECTED FOR VULKAN-HPP 9.3 ---
+  auto result = mDevice->createGraphicsPipelineUnique(*mPipelineCache, pipelineInfo);
+
+  if (result.result != vk::Result::eSuccess)
+  {
+    throw std::runtime_error("Failed to create graphics pipeline.");
+  }
+
+  GraphicsPipelineCache pipelineCacheEntry{
+      renderState,             
+      graphics,                
+      std::move(result.value)
+  };
+
+  mGraphicsPipelines.push_back(std::move(pipelineCacheEntry));
 
   VkPipeline handle = *mGraphicsPipelines.back().Pipeline;
   return reinterpret_cast<Handle::Pipeline>(handle);
@@ -594,11 +605,17 @@ Handle::Pipeline VulkanDevice::CreateComputePipeline(Handle::ShaderModule shader
   auto pipelineInfo = vk::ComputePipelineCreateInfo().setStage(stageInfo).setLayout(
       reinterpret_cast<VkPipelineLayout>(layout));
 
-  mComputePipelines.push_back(
-      {shaderModule,
-       pipelineLayout,
-       specConstInfo,
-       mDevice->createComputePipelineUnique(*mPipelineCache, pipelineInfo)});
+  auto resultValue = mDevice->createComputePipelineUnique(*mPipelineCache, pipelineInfo);
+
+  if (resultValue.result != vk::Result::eSuccess)
+  {
+    throw std::runtime_error("Failed to create compute pipeline.");
+  }
+
+  mComputePipelines.push_back({shaderModule,
+                               pipelineLayout,
+                               specConstInfo,
+                               std::move(resultValue.value)});
 
   VkPipeline handle = *mComputePipelines.back().Pipeline;
   return reinterpret_cast<Handle::Pipeline>(handle);
